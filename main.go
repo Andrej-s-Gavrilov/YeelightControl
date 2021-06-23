@@ -139,6 +139,8 @@ func main() {
 
 	signal.Notify(osSignals, os.Interrupt)
 	go interruptionHandler(client)
+	for {
+	}
 }
 
 func randInt(min int, max int) int {
