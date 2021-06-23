@@ -42,6 +42,14 @@ func AddLamp(lamp_pool *LampPool, lamp_name, ip, port, mqtt_topic_ctl, mqtt_topi
 	lamp_pool.Pool[lamp_name] = &con
 }
 
+func DisconnectLamp(lamp *Lamp) bool {
+	if err := lamp.Conn.Close(); err != nil {
+		log.WithFields(log.Fields{"modul": "tcp"}).Error("Can not close connectiot to lamp:" + lamp.Lamp_name + ". " + err.Error())
+		return false
+	}
+	return true
+}
+
 func GetLampByCtlTopic(lamp_pool *LampPool, mqtt_topic_ctl string) string {
 	for key, lamp := range lamp_pool.Pool {
 		if lamp.Mqtt_topic_ctl == mqtt_topic_ctl {

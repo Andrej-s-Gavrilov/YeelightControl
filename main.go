@@ -1,31 +1,33 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"strconv"
 	"time"
-	tcp "yeelight_control/tcp_connection"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
+
+	tcp "yeelight_control/tcp_connection"
 )
 
 var (
-	mqtt_broker = "192.168.0.2"
-	mqtt_port   = 1883
-	mqtt_ports  = "1883"
-	//mqtt_client = "YeelightControl"
-	//mqtt_client_version = "0.1"
-	mqtt_client         = "YeelightControl-dev"
-	mqtt_client_version = "0.0-dev"
+	application_name    string
+	version             string
+	mqtt_client         string
+	mqtt_client_version string
+	mqtt_broker         string
+	mqtt_port           int
+	config_file_name    string
+	log_filename        string
+	get_version         bool
+	log_level           log.Level
+	lamp_pool           tcp.LampPool
 	osSignals           = make(chan os.Signal, 1)
-
-	log_filename = "YeelightControl.log"
-
-	lamp_pool tcp.LampPool
-	//connPool     *tcp.ConnectionPool
 
 	// {"id":1,"method":"adjust_bright","params":[20, 500]}
 	// {"id":1,"method":"adjust_bright","params":[-20, 500]}
@@ -40,19 +42,38 @@ var (
 )
 
 func init() {
-	fmt.Printf("\n[%s] Init() YeelightControl started\n", time.Now().Format("15:04:05.000"))
+	const (
+		default_application_name = "YeelightControl-dev"
+		default_version          = "0.0-dev"
+		default_config_fileName  = "config.yaml"
+		default_log_filename     = "yeelightControl.log"
+		default_log_level        = log.InfoLevel //log.ErrorLevel, log.DebugLevel
+		deafult_mqtt_broker      = "192.168.0.2"
+		default_mqtt_port        = 1883
+	)
 	rand.Seed(time.Now().UTC().UnixNano())
+
+	flag.StringVar(&config_file_name, "config", default_config_fileName, "Name of configuration file")
+	flag.BoolVar(&get_version, "version", false, "Print version of application")
+
+	application_name = default_application_name
+	version = default_version
+
+	mqtt_client = application_name
+	mqtt_client_version = version
+	mqtt_broker = deafult_mqtt_broker
+	mqtt_port = default_mqtt_port
+
+	// Configure loging
+	log_filename = default_log_filename
+	log_level = default_log_level
 	file, err := os.OpenFile(log_filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err == nil {
 		log.SetOutput(file)
 	} else {
 		log.Info("Failed to log to file, using default stderr")
 	}
-
-	// Lof level
-	//log.SetLevel(log.ErrorLevel)
 	log.SetLevel(log.InfoLevel)
-	//log.SetLevel(log.DebugLevel)
 }
 
 func main() {
@@ -60,15 +81,25 @@ func main() {
 		fmt.Printf("[%s] YeelightControl stoped\n", time.Now().Format("15:04:05.000"))
 		log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl stoped")
 	}()
-	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl started")
+
+	flag.Parse()
+
+	if get_version {
+		fmt.Println("Application version is " + application_name + version)
+		os.Exit(0)
+	}
+
+	fmt.Printf("[%s] YeelightControl is starting ...\n", time.Now().Format("15:04:05.000"))
+	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl is starting ...")
 
 	// Work with Lamp
 	lamp_pool = tcp.InitLampPool()
-	// Lamp-1
+
+	// My configuration
 	//tcp.AddLamp(&lamp_pool, "yeelight1", "192.168.0.3", "55443", "yeelightControl/yeelight1/control", "yeelightControl/yeelight1/status")
 	//tcp.ConnectLamp(lamp_pool.Pool["yeelight1"])
 
-	// Test config
+	// Test configuration
 	tcp.AddLamp(&lamp_pool, "yeelightTest1", "127.0.0.1", "55001", "yeelightControl/yeelightTest1/control", "yeelightControl/yeelightTest1/status")
 	tcp.AddLamp(&lamp_pool, "yeelightTest2", "127.0.0.1", "55002", "yeelightControl/yeelightTest2/control", "yeelightControl/yeelightTest2/status")
 	tcp.AddLamp(&lamp_pool, "yeelightTest3", "127.0.0.1", "55003", "yeelightControl/yeelightTest3/control", "yeelightControl/yeelightTest3/status")
@@ -76,10 +107,7 @@ func main() {
 	tcp.ConnectLamp(lamp_pool.Pool["yeelightTest2"])
 	tcp.ConnectLamp(lamp_pool.Pool["yeelightTest3"])
 
-	// MQTT broker
-
-	fmt.Printf("[%s] MQTT broker: %s:%s. Client: %s (%s)\n", time.Now().Format("15:04:05.000"), mqtt_broker, mqtt_ports, mqtt_client, mqtt_client_version)
-	log.WithFields(log.Fields{"modul": "main"}).Info("MQTT broker: " + mqtt_broker + ":" + mqtt_ports + " Client:" + mqtt_client + "v" + mqtt_client_version)
+	// Work with MQTT broker
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", mqtt_broker, mqtt_port))
 	opts.SetClientID(mqtt_client + "-" + mqtt_client_version)
@@ -89,56 +117,52 @@ func main() {
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Printf("[%s] Can not estaplishe connection to MQTT: %s:%s\n", time.Now().Format("15:04:05.000"), mqtt_broker, mqtt_ports)
+		fmt.Printf("[%s] Can not estaplishe connection to MQTT: %s:%s\n", time.Now().Format("15:04:05.000"), mqtt_broker, strconv.Itoa(mqtt_port))
 		log.WithFields(log.Fields{"modul": "main"}).Fatal(token.Error().Error())
-		//panic(token.Error())
 	}
-	go interruptionHandler(client)
+	fmt.Printf("[%s] MQTT broker: %s:%s. Client: %s (%s)\n", time.Now().Format("15:04:05.000"), mqtt_broker, strconv.Itoa(mqtt_port), mqtt_client, mqtt_client_version)
+	log.WithFields(log.Fields{"modul": "main"}).Info("MQTT broker is connected. Broker:" + mqtt_broker + ":" + strconv.Itoa(mqtt_port) + " Client:" + mqtt_client + " ver:" + mqtt_client_version)
 
-	// Work - yeelight1
+	// My configuration - yeelight1
 	//sub(client, lamp_pool.Pool["yeelight1"].Mqtt_topic_ctl)
 
-	//
+	// Test configuration
 	sub(client, lamp_pool.Pool["yeelightTest1"].Mqtt_topic_ctl)
 	sub(client, lamp_pool.Pool["yeelightTest2"].Mqtt_topic_ctl)
 	sub(client, lamp_pool.Pool["yeelightTest3"].Mqtt_topic_ctl)
 
+	//For pushing status toward Broker
 	//publish(client, lamp_pool.Pool["yeelight1"].Mqtt_topic_ctl)
 
-	/*
-		var res string
-		var ok bool
-		var itr = 0
-	*/
-	for {
-		/* 		itr++
-		   		log.WithFields(log.Fields{"modul": "main"}).Debug("Test iteratipon: " + string(itr) + " is going on")
-		   		fmt.Printf("[%s] Log DEBUG\n", time.Now().Format("15:04:05.000"))
+	fmt.Printf("[%s] YeelightControl started\n", time.Now().Format("15:04:05.000"))
+	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl started")
 
-		   		if res, ok = tcp.SendCommandLamp(lamp_pool.Pool["yeelight1"], "Lamp1 ... I'm here"); !ok {
-		   			fmt.Printf("[%s] Error during sending message to Lammp1\n", time.Now().Format("15:04:05.000"))
-		   			os.Exit(1)
-		   		} else {
-		   			fmt.Printf("[%s] Message is sent, lamp: yeelight1. Iteration: %d\n", time.Now().Format("15:04:05.000"), itr)
-		   			_ = res
-		   		}
-		   		time.Sleep(10 * time.Second)
-
-		   		if res, ok = tcp.SendCommandLamp(lamp_pool.Pool["yeelight2"], "Lamp2 ... I'm too"); !ok {
-		   			fmt.Printf("[%s] Error during sending message to Lammp2", time.Now().Format("15:04:05.000"))
-		   			os.Exit(1)
-		   		} else {
-		   			fmt.Printf("[%s] Message is sent, lamp: yeelight2. Iteration: %d\n", time.Now().Format("15:04:05.000"), itr)
-		   			_ = res
-		   		}
-		   		time.Sleep(5 * time.Second)
-		*/
-	}
-
+	signal.Notify(osSignals, os.Interrupt)
+	go interruptionHandler(client)
 }
 
 func randInt(min int, max int) int {
 	return min + rand.Intn(max-min)
+}
+
+func interruptionHandler(client mqtt.Client) {
+	signal := <-osSignals
+	fmt.Printf("[%s] YeelightControl recived signal: %+v signal\n", time.Now().Format("15:04:05.000"), signal)
+	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl recived signal: " + signal.String())
+
+	fmt.Printf("[%s] YeelightControl is stoping ...\n", time.Now().Format("15:04:05.000"))
+	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl is stoping ...")
+
+	client.Disconnect(250)
+	fmt.Printf("[%s] MQTT client stoped\n", time.Now().Format("15:04:05.000"))
+	log.WithFields(log.Fields{"modul": "main"}).Info("MQTT client (" + mqtt_client + " ver:" + mqtt_client_version + " stoped")
+
+	for _, lamp := range lamp_pool.Pool {
+		tcp.DisconnectLamp(lamp)
+		fmt.Printf("[%s] Lamp %s[%s:%s] disconnected\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
+		log.WithFields(log.Fields{"modul": "main"}).Info("Lamp" + lamp.Lamp_name + "[" + lamp.Ip + ":" + lamp.Port + "] disconnected " + mqtt_client + " ver:" + mqtt_client_version + " stoped")
+	}
+	os.Exit(0)
 }
 
 //MQTT
@@ -149,14 +173,6 @@ var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
 	fmt.Printf("[%s] Connect lost: %v\n", time.Now().Format("15:04:05.000"), err)
 	log.WithFields(log.Fields{"modul": "main"}).Fatal("Connect lost: " + err.Error())
-}
-
-func interruptionHandler(client mqtt.Client) {
-	signal := <-osSignals
-	fmt.Printf("STOPPING %s version:%s (received %+v signal)", mqtt_client, mqtt_client_version, signal)
-	client.Disconnect(250)
-	log.WithFields(log.Fields{"modul": "main"}).Fatal("STOPPING: " + mqtt_client + " version:" + mqtt_client_version + "(received " + signal.String() + ")")
-	//os.Exit(0)
 }
 
 // TODO: Is never used
@@ -183,14 +199,12 @@ var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Me
 		cmd := string(msg.Payload())
 
 		log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "] Sending message : " + cmd + " from topic: " + msg.Topic())
-		//fmt.Printf("[%s] Attempt to send cmd - %d\n", time.Now().Format("15:04:05.000"), i)
 
 		// Try to send command to the Lamp
 		if res, ok := tcp.SendCommandLamp(lamp_pool.Pool[lampKey], cmd); !ok {
 			log.WithFields(log.Fields{"modul": "main"}).Warning("[" + message_id + "] Error sending")
 
 			fmt.Printf("[%s] Error sending message: \"%s\" from topic: %s\n", time.Now().Format("15:04:05.000"), cmd, msg.Topic())
-			//fmt.Printf("[%s] Trying to reconnect - %d\n", time.Now().Format("15:04:05.000"), i)
 
 			// Need to add reconnection procedure
 			// Curently there is one attempt to reconnect
