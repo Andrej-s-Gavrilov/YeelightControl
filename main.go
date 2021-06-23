@@ -177,36 +177,41 @@ func initMQTTconnection(mqtt_broker string, mqtt_port int) {
 
 var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	fmt.Printf("[%s] Received message: %s from topic: %s\n", time.Now().Format("15:04:05.000"), msg.Payload(), msg.Topic())
-	// ????
-	//key := GetLampByCtlTopic(lamp_pool, msg.Topic())
-	go func() {
-		var res string
-		var ok bool
+	lampKey := tcp.GetLampByCtlTopic(&lamp_pool, msg.Topic())
+	if lampKey != "" {
 		message_id := strconv.Itoa(randInt(1000, 9999))
 		cmd := string(msg.Payload())
-		for i := 1; i <= 3; i++ {
-			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "]Sending message : " + cmd + " from topic: " + msg.Topic())
-			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "]Attempt to send : " + strconv.Itoa(i))
-			//fmt.Printf("[%s] Attempt to send cmd - %d\n", time.Now().Format("15:04:05.000"), i)
 
-			// Todo: Need to use Multi Variable
-			if res, ok = tcp.SendCommandLamp(lamp_pool.Pool["yeelight1"], cmd); !ok {
-				log.WithFields(log.Fields{"modul": "main"}).Warning("[" + message_id + "]Error sending Attempt of resend: " + strconv.Itoa(i))
-				//fmt.Printf("[%s] Error sending\n", time.Now().Format("15:04:05.000"))
-				//fmt.Printf("[%s] Trying to reconnect - %d\n", time.Now().Format("15:04:05.000"), i)
-				//Need to block other goroutines. We have to avoid multiply reconnection.
-				if ok := tcp.ConnectLamp(lamp_pool.Pool["yeelight1"]); !ok {
-					time.Sleep(1 * time.Second)
+		log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "] Sending message : " + cmd + " from topic: " + msg.Topic())
+		//fmt.Printf("[%s] Attempt to send cmd - %d\n", time.Now().Format("15:04:05.000"), i)
+
+		// Try to send command to the Lamp
+		if res, ok := tcp.SendCommandLamp(lamp_pool.Pool[lampKey], cmd); !ok {
+			log.WithFields(log.Fields{"modul": "main"}).Warning("[" + message_id + "] Error sending")
+
+			fmt.Printf("[%s] Error sending message: \"%s\" from topic: %s\n", time.Now().Format("15:04:05.000"), cmd, msg.Topic())
+			//fmt.Printf("[%s] Trying to reconnect - %d\n", time.Now().Format("15:04:05.000"), i)
+
+			// Need to add reconnection procedure
+			// Curently there is one attempt to reconnect
+			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "] Reconnecting")
+			if ok := tcp.ConnectLamp(lamp_pool.Pool[lampKey]); ok {
+				if res, ok := tcp.SendCommandLamp(lamp_pool.Pool[lampKey], cmd); !ok {
+					log.WithFields(log.Fields{"modul": "main"}).Warning("[" + message_id + "] Resend Message. Error sending. Attempt of resend: " + strconv.Itoa(1))
+				} else {
+					fmt.Printf("[%s] Result: %s\n", time.Now().Format("15:04:05.000"), res)
+					log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "] Resend message. Result : " + res)
 				}
 			} else {
-				//fmt.Printf("[%s] Result: %s\n", time.Now().Format("15:04:05.000"), res)
-				log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "]Result : " + res)
-				_ = res
-				break
+				log.WithFields(log.Fields{"modul": "main"}).Warning("[" + message_id + "] Failed attempt to reconnect")
 			}
-
+		} else {
+			fmt.Printf("[%s] Result: %s\n", time.Now().Format("15:04:05.000"), res)
+			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + " Result : " + res)
 		}
-	}()
+	} else {
+		log.WithFields(log.Fields{"modul": "main"}).Warning("There is subscription on topick" + msg.Topic() + ", but Lamp did not finde by ctl topick")
+	}
 }
 
 func sub(client mqtt.Client, topic string) {

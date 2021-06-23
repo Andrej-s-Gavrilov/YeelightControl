@@ -52,7 +52,7 @@ func GetLampByCtlTopic(lamp_pool *LampPool, mqtt_topic_ctl string) string {
 }
 
 func ConnectLamp(lamp *Lamp) bool {
-	fmt.Printf("[%s] ConnectLamp: Connecting to Name=%s, Host=%s:%s\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
+	//fmt.Printf("[%s] ConnectLamp: Connecting to Name=%s, Host=%s:%s\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
 	var err error
 	var tcpAddr *net.TCPAddr
 	if tcpAddr, err = net.ResolveTCPAddr("tcp4", lamp.Ip+":"+lamp.Port); err != nil {
@@ -80,21 +80,21 @@ func SendCommandLamp(lamp *Lamp, command string) (string, bool) {
 	var n int
 
 	if lamp.Conn == nil {
-		log.WithFields(log.Fields{"modul": "tcp"}).Error("There is no active connection to lamp:" + lamp.Lamp_name + ". " + err.Error())
+		log.WithFields(log.Fields{"modul": "tcp"}).Warning("There is no active connection to lamp:" + lamp.Lamp_name)
 		//fmt.Println("There is no active connection to lamp:" + lamp.Lamp_name)
 		return "", false
 	}
 
 	lamp.Conn.SetWriteDeadline(time.Now().Add(time.Second * writeDeadLine))
 	if _, err = lamp.Conn.Write([]byte(command + "\r\n")); err != nil {
-		log.WithFields(log.Fields{"modul": "tcp"}).Error("Can not write to lamp:" + lamp.Lamp_name + ". " + err.Error())
+		log.WithFields(log.Fields{"modul": "tcp"}).Warning("Can not write to lamp:" + lamp.Lamp_name + ". " + err.Error())
 		//fmt.Println("Can not write to lamp:" + lamp.Lamp_name + ". " + err.Error())
 		return "", false
 	}
 
 	lamp.Conn.SetReadDeadline(time.Now().Add(time.Second * readDeadLine))
 	if n, err = lamp.Conn.Read(buf[0:]); err != nil {
-		log.WithFields(log.Fields{"modul": "tcp"}).Error("Can not Read to lamp:" + lamp.Lamp_name + ". " + err.Error())
+		log.WithFields(log.Fields{"modul": "tcp"}).Warning("Can not Read to lamp:" + lamp.Lamp_name + ". " + err.Error())
 		//fmt.Println("Can not Read to lamp:" + lamp.Lamp_name + ". " + err.Error())
 		return "", false
 	}
