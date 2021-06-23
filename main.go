@@ -27,6 +27,7 @@ var (
 	get_version         bool
 	log_level           log.Level
 	lamp_pool           tcp.LampPool
+	client              mqtt.Client
 	osSignals           = make(chan os.Signal, 1)
 
 	// {"id":1,"method":"adjust_bright","params":[20, 500]}
@@ -67,17 +68,32 @@ func init() {
 	// Configure loging
 	log_filename = default_log_filename
 	log_level = default_log_level
-	file, err := os.OpenFile(log_filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err == nil {
-		log.SetOutput(file)
+
+	//TODO: need to close log file
+	if file, err := os.OpenFile(log_filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err != nil {
+		log.Warning("Failed to log to file, using default stderr")
 	} else {
-		log.Info("Failed to log to file, using default stderr")
+		log.SetOutput(file)
+		log.SetLevel(log.InfoLevel)
 	}
-	log.SetLevel(log.InfoLevel)
+
 }
 
 func main() {
 	defer func() {
+		fmt.Printf("[%s] YeelightControl is stoping ...\n", time.Now().Format("15:04:05.000"))
+		log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl is stoping ...")
+
+		client.Disconnect(250)
+		fmt.Printf("[%s] MQTT client stoped\n", time.Now().Format("15:04:05.000"))
+		log.WithFields(log.Fields{"modul": "main"}).Info("MQTT client (" + mqtt_client + " ver:" + mqtt_client_version + ") stoped")
+
+		for _, lamp := range lamp_pool.Pool {
+			tcp.DisconnectLamp(lamp)
+			fmt.Printf("[%s] Lamp %s[%s:%s] disconnected\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
+			log.WithFields(log.Fields{"modul": "main"}).Info("Lamp " + lamp.Lamp_name + "[" + lamp.Ip + ":" + lamp.Port + "] disconnected")
+		}
+
 		fmt.Printf("[%s] YeelightControl stoped\n", time.Now().Format("15:04:05.000"))
 		log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl stoped")
 	}()
@@ -85,7 +101,7 @@ func main() {
 	flag.Parse()
 
 	if get_version {
-		fmt.Println("Application version is " + application_name + version)
+		fmt.Println(application_name + version)
 		os.Exit(0)
 	}
 
@@ -115,7 +131,7 @@ func main() {
 	opts.OnConnect = connectHandler
 	opts.OnConnectionLost = connectLostHandler
 
-	client := mqtt.NewClient(opts)
+	client = mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		fmt.Printf("[%s] Can not estaplishe connection to MQTT: %s:%s\n", time.Now().Format("15:04:05.000"), mqtt_broker, strconv.Itoa(mqtt_port))
 		log.WithFields(log.Fields{"modul": "main"}).Fatal(token.Error().Error())
@@ -138,33 +154,15 @@ func main() {
 	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl started")
 
 	signal.Notify(osSignals, os.Interrupt)
-	go interruptionHandler(client)
-	for {
-	}
-}
-
-func randInt(min int, max int) int {
-	return min + rand.Intn(max-min)
-}
-
-func interruptionHandler(client mqtt.Client) {
 	signal := <-osSignals
 	fmt.Printf("[%s] YeelightControl recived signal: %+v signal\n", time.Now().Format("15:04:05.000"), signal)
 	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl recived signal: " + signal.String())
 
-	fmt.Printf("[%s] YeelightControl is stoping ...\n", time.Now().Format("15:04:05.000"))
-	log.WithFields(log.Fields{"modul": "main"}).Info("YeelightControl is stoping ...")
+}
 
-	client.Disconnect(250)
-	fmt.Printf("[%s] MQTT client stoped\n", time.Now().Format("15:04:05.000"))
-	log.WithFields(log.Fields{"modul": "main"}).Info("MQTT client (" + mqtt_client + " ver:" + mqtt_client_version + " stoped")
-
-	for _, lamp := range lamp_pool.Pool {
-		tcp.DisconnectLamp(lamp)
-		fmt.Printf("[%s] Lamp %s[%s:%s] disconnected\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
-		log.WithFields(log.Fields{"modul": "main"}).Info("Lamp" + lamp.Lamp_name + "[" + lamp.Ip + ":" + lamp.Port + "] disconnected " + mqtt_client + " ver:" + mqtt_client_version + " stoped")
-	}
-	os.Exit(0)
+// Tools
+func randInt(min int, max int) int {
+	return min + rand.Intn(max-min)
 }
 
 //MQTT
@@ -175,22 +173,6 @@ var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
 	fmt.Printf("[%s] Connect lost: %v\n", time.Now().Format("15:04:05.000"), err)
 	log.WithFields(log.Fields{"modul": "main"}).Fatal("Connect lost: " + err.Error())
-}
-
-// TODO: Is never used
-func initMQTTconnection(mqtt_broker string, mqtt_port int) {
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", mqtt_broker, mqtt_port))
-	opts.SetClientID(mqtt_client + "-" + mqtt_client_version)
-	opts.SetDefaultPublishHandler(messagePubHandler)
-	opts.OnConnect = connectHandler
-	opts.OnConnectionLost = connectLostHandler
-	client := mqtt.NewClient(opts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.WithFields(log.Fields{"modul": "main"}).Fatal(token.Error().Error())
-		panic(token.Error())
-	}
-	go interruptionHandler(client)
 }
 
 var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
@@ -223,7 +205,7 @@ var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Me
 			}
 		} else {
 			fmt.Printf("[%s] Result: %s\n", time.Now().Format("15:04:05.000"), res)
-			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + " Result : " + res)
+			log.WithFields(log.Fields{"modul": "main"}).Info("[" + message_id + "] Result : " + res)
 		}
 	} else {
 		log.WithFields(log.Fields{"modul": "main"}).Warning("There is subscription on topick" + msg.Topic() + ", but Lamp did not finde by ctl topick")
@@ -243,5 +225,3 @@ func publish(client mqtt.Client, topic string) {
 	token.Wait()
 	time.Sleep(time.Second)
 }
-
-// MQTT -
