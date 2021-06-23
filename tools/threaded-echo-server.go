@@ -1,23 +1,47 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"time"
 )
 
+var (
+	ip, port  string
+	osSignals = make(chan os.Signal, 1)
+)
+
+func init() {
+	const (
+		default_ip   = "127.0.0.1"
+		default_port = "55000"
+	)
+	flag.StringVar(&ip, "ip", default_ip, "Ip address for binding")
+	flag.StringVar(&port, "port", default_port, "Port for binding")
+}
+
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Printf("Use %s ip:port\n", os.Args[0])
+	var err error
+	var tcpAddr *net.TCPAddr
+	var listener *net.TCPListener
+	flag.Parse()
+
+	fmt.Printf("Service is working on %s:%s\n", ip, port)
+	if tcpAddr, err = net.ResolveTCPAddr("tcp", ip+":"+port); err != nil {
+		fmt.Printf("Fatal error: %s", err.Error())
 		os.Exit(1)
 	}
-	service := os.Args[1]
-	fmt.Printf("Service is working on %s\n", service)
-	tcpAddr, err := net.ResolveTCPAddr("tcp", service)
-	checkError(err)
-	listener, err := net.ListenTCP("tcp", tcpAddr)
-	checkError(err)
+
+	if listener, err = net.ListenTCP("tcp", tcpAddr); err != nil {
+		fmt.Printf("Fatal error: %s", err.Error())
+		os.Exit(1)
+	}
+
+	signal.Notify(osSignals, os.Interrupt)
+	go interruptionHandler(*listener)
 
 	for {
 		conn, err := listener.Accept()
@@ -26,7 +50,6 @@ func main() {
 		}
 		go handlerClient(conn)
 	}
-
 }
 
 func handlerClient(conn net.Conn) {
@@ -51,9 +74,12 @@ func handlerClient(conn net.Conn) {
 	}
 }
 
-func checkError(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
-		os.Exit(1)
+func interruptionHandler(listenr net.TCPListener) {
+	signal := <-osSignals
+	fmt.Printf("Recived signal: %s\n", signal.String())
+	if err := listenr.Close(); err != nil {
+		fmt.Printf("Error during closing listener. Error: %s", err.Error())
 	}
+	fmt.Printf("Application is stoped")
+	os.Exit(0)
 }
