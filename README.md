@@ -18,4 +18,4 @@ Tools for controlling Yeelight's lamp. It is only experement.
 * (-) Add command line parameters (--help, ...)
 
 ### v0.3
-* Plened
+* Planed
