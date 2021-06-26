@@ -77,8 +77,8 @@ func ConnectLamp(lamp *Lamp) bool {
 		return false
 	}
 
-	log.WithFields(log.Fields{"modul": "tcp"}).Info("Connection established to lamp: " + lamp.Lamp_name + ", " + lamp.Ip + ":" + lamp.Port + "]")
-	fmt.Printf("[%s] ConnectLamp: Connection established for Name=%s, Host=%s:%s\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
+	log.WithFields(log.Fields{"modul": "tcp"}).Info("Connection established to device: " + lamp.Lamp_name + ", " + lamp.Ip + ":" + lamp.Port + "]")
+	fmt.Printf("[%s] Connection established with device. Name=%s, Host=%s:%s\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
 	return true
 }
 
