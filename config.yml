@@ -1,0 +1,35 @@
+# MQTT server configuration
+mqtt_server:
+  host: 192.168.0.2
+  port: 1883
+  client_name: "YeelightControl-dev"
+  client_version: "0.0-dev"
+loging:
+  log_file_path: "yeelightControl.log"
+  log_level: info #debug, error
+# List of devices
+devices:
+  device_1:
+    device_name: yeelightTest1
+    host: 127.0.0.1
+    port: 55001
+    control_topic: "yeelightControl/yeelightTest1/control"
+    satus_topic: "yeelightControl/yeelightTest1/status"
+  device_2:
+    device_name: yeelightTest2
+    host: 127.0.0.1
+    port: 55002
+    control_topic: "yeelightControl/yeelightTest2/control"
+    satus_topic: "yeelightControl/yeelightTest2/status"
+  device_3:
+    device_name: yeelightTest3
+    host: 127.0.0.1
+    port: 55003
+    control_topic: "yeelightControl/yeelightTest3/control"
+    satus_topic: "yeelightControl/yeelightTest3/status"
+#  device_yeelight1:
+#    device_name: yeelight1
+#    host: 192.168.0.3
+#    port: 55443
+#    control_topic: "yeelightControl/yeelight1/control"
+#    satus_topic: "yeelightControl/yeelight1/status"
