@@ -126,7 +126,7 @@ func main() {
 		log.WithFields(log.Fields{"modul": "main"}).Info("MQTT client (" + mqtt_client + " ver:" + mqtt_client_version + ") stoped")
 
 		for _, lamp := range lamp_pool.Pool {
-			tcp.DisconnectLamp(lamp)
+			tcp.DisconnectLamp(lamp) // TODO: need to check active connection
 			fmt.Printf("[%s] Lamp %s[%s:%s] disconnected\n", time.Now().Format("15:04:05.000"), lamp.Lamp_name, lamp.Ip, lamp.Port)
 			log.WithFields(log.Fields{"modul": "main"}).Info("Lamp " + lamp.Lamp_name + "[" + lamp.Ip + ":" + lamp.Port + "] disconnected")
 		}
@@ -137,7 +137,7 @@ func main() {
 
 	if get_version {
 		fmt.Println(application_name + version)
-		os.Exit(0)
+		return
 	}
 
 	// Work with MQTT broker
